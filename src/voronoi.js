@@ -1,441 +1,437 @@
 const THREE = require('three');
-const VORONOI = require('voronoi')
-import MapData from './mapdata.js'
 
-class Site {
-	constructor (gridPoint) {
-		this.geoPos = gridPoint;
-		this.mapPos;
-		this.t;	
-		this.id;
-	}
-
-	fromMapPoint(gridPoint) {
-		// sample position 
-		var x = gridPoint.x;
-		var z = gridPoint.y;
-		var x1 = x + Math.random();
-		var z1 = z + Math.random();
-		this.geoPos = new THREE.Vector3(x1, 0, z1);
-		this.mapPos = new THREE.Vector3(x1, z1, 0);
-	}
-}
-
-class Edge {
+/*
+ * computes the perpendicular bisector for two points
+ */
+class HalfPlane {
 	constructor(a, b) {
-		this.a = a;
-		this.b = b;
-		this.delete = false;
-	}
-	dist(point) {
-		var m = (this.b.z - this.a.z) / (this.b.x - this.a.x);
-		// y = mx + b
-		var b0 = this.a.z - m * this.a.x;
+		// holds the points that this plane bisects
+		this.p1 = a;
+		this.p2 = b;
 
+		// stores the intersections between this and all other half planes
+		this.intersections = [];
+		this.isectGeo;
 
-		var x0 = point.x;
-		var y0 = point.z;
-		// convert to cartesian
-		var a = -m;
-		var b = 1;
-		var c = -b0;
-
-		var x = (b  * (b * x0 - a * y0) - a * c) / (a * a + b * b);
-		var y = (a * (-b * x0 + a * y0) - b * c) / (a * a + b * b);
-
-		return point.distanceTo(new THREE.Vector3(x, 0, y));
-	}
-}
-
-class Cell {
-	constructor(site, edges) {
-		this.edges = edges ? edges : [];
-		this.site = site;
-	}
-}
-
-class PB {
-	constructor(m, b, midpoint) {
-		this.m = m;
-		this.b = b;
-		this.midpoint = midpoint;
-	}
-	dist(point) {
-		var x0 = point.x;
-		var y0 = point.z;
-		// convert to cartesian
-		var a = -this.m;
-		var b = 1;
-		var c = -this.b;
-
-		var x = (b  * (b * x0 - a * y0) - a * c) / (a * a + b * b);
-		var y = (a * (-b * x0 + a * y0) - b * c) / (a * a + b * b);
-
-		return point.distanceTo(new THREE.Vector3(x, 0, y));
-	}
-
-	spacialTest(p) {
-		// x = t
-		// y = mt + b
-		// find a (t = -100)
-		var a = new THREE.Vector3(-20, 0, -20 * this.m + this.b);
-		// find b (t = 100)
-		var b = new THREE.Vector3(20, 0, 20 * this.m + this.b);
-		return (new THREE.Vector3().subVectors(p, a)).dot(new THREE.Vector3().subVectors(b, a));
-	}
-
-	draw(scene) {
-		// x = t
-		// y = mt + b
-		// find a (t = -100)
-		var a = new THREE.Vector3(-20, 0, -20 * this.m + this.b);
-		// find b (t = 100)
-		var b = new THREE.Vector3(20, 0, 20 * this.m + this.b);
-
-		// use green
-		var geometry = new THREE.Geometry();
-		var material = new THREE.LineBasicMaterial({ color: 0x00ff00, weight: 2 });
-		geometry.vertices.push(a);
-		geometry.vertices.push(b);
-		var line = new THREE.Line(geometry, material);
-		//this.edgeGeo.push(line);
-		scene.add(line);
-	}
-}
-
-
-
-class Voronoi {
-	constructor (mapData, numPoints) {
-		var testPB = new PB(1, 0);
-		//console.log(testPB.dist(new THREE.Vector3(2, 0, 1)));
-		//console.log(this.findPB(new THREE.Vector3(1, 0, 1), new THREE.Vector3(1, 0, 0)));
-		this.sites = [];
-		this.edges = [];
-		this.cells = [];
-
-		this.numPoints = numPoints;
-		this.water = mapData.water;
-		this.population = mapData.pop;
-		this.mapData = mapData;
-		this.mapVerts = mapData.water.geo.vertices;
-		
-		this.edgeGeo = [];
-		this.scene = mapData.scene;
-		this.colors = [];
-		
-		this.generateSites();
-		this.dummyCellSetUp();
-		//this.drawScene();
-
-		this.sites.forEach(function(site) {
-			var cell = new Cell(site);
-			//console.log(this.cells.length);
-			this.cells.forEach(function(c) {
-				// find perpindicular bisector
-				var pb = this.findPB(c.site.geoPos, cell.site.geoPos);
-				//pb.draw(this.scene);
-
-				var criticalPoints = [];
-				c.edges.forEach(function(e) {
-					// if e is closer to site than c's
-					if (e.dist(site.geoPos) < e.dist(c.site.geoPos)) {
-						//e.delete = true;					
-					}
-
-					// edge in slope intersect
-					var A1 = e.b.z - e.a.z;
-					var B1 = e.a.x - e.b.x;
-					var C1 = A1 * e.a.x + B1 * e.a.z;
-
-					var A2 = -pb.m;
-					var B2 = 1;
-					var C2 = pb.b;
-
-					var det = A1 * B2 - A2 * B1;
-					if (Math.abs(det) < 0.001) {
-						// parallel lines
-					} else { // if e intersects pb
-						// add new point of intersection
-						var x = (B2 * C1 - B1 * C2) / det;
-           				var y = (A1 * C2 - A2 * C1) / det;
-           				var intersection = new THREE.Vector3(x, 0, y);
-						criticalPoints.push(intersection);
-						//console.log(intersection);
-						// clip edge to the far side
-						if (e.a.distanceTo(c.site.geoPos) < e.b.distanceTo(c.site.geoPos)) {
-							e.b = intersection;
-						} else {
-							e.a = intersection;
-						}
-					}
-				
-
-				}, this);
-				// add new edge from intersection points
-				if (criticalPoints.length == 2) {
-					//console.log("found intersection");
-					var ne = new Edge(criticalPoints[0], criticalPoints[1]);
-					//console.log(ne);
-					this.edges.push(ne);
-					cell.edges.push(ne);
-					c.edges.push(ne);
-				}
-
-				// delete edges as necessary
-				c.edges = c.edges.filter(function(edge) {
-				 	return !edge.delete;
-			    });	
-			}, this);
-			// add new cell 
-			this.cells.push(cell);
-		}, this);
-		//this.drawScene();
-	}
-
-	// find the perpindicular bisector
-	findPB(a, b) {
+		// calculate the midpoint between points a and b
 		var midpoint = (new THREE.Vector3()).addVectors(a, b);
 		midpoint.multiplyScalar(0.5);
-		var slope = (b.z - a.z) / (b.x - a.x);
+		this.midpoint = midpoint;
+		
+		// calculates the slope of the perpendicular bisector with the negative recip
+		var slope = (b.y - a.y) / (b.x - a.x);
 		var negRecip = -(1 / slope);
-		var b = midpoint.z - negRecip * midpoint.x;
-		var pb = new PB();
-		pb.m = negRecip;
-		pb.b = b;
-		pb.midpoint = midpoint;
-		return pb;
+		
+		this.b = midpoint.y - negRecip * midpoint.x;
+		this.m = negRecip;
+
+		this.lineGeo;
 	}
 
-	dummyCellSetUp() {
-		var w = this.mapData.gridSize;
-		var h = this.mapData.gridSize;
-		
-		// add three or four points at "infinity" to cells set, to bound diagram
-		var dum1 = new THREE.Vector3(-w / 1.5, 0, -h / 1.5);
-		var dum4 = new THREE.Vector3(-w / 1.5, 0, h / 1.5);
-		var dum2 = new THREE.Vector3(w / 1.5, 0, -h / 1.5);
-		var dum3 = new THREE.Vector3(w / 1.5, 0, h / 1.5);
-		
-		
-		var a = new THREE.Vector3(-2 * w, 0, 0);
-		var b = new THREE.Vector3(0, 0, 0);
-		var c = new THREE.Vector3(0, 0, 2 * h);
-		var d = new THREE.Vector3(2 * w, 0, 0);
-
-		var e = new THREE.Vector3(-2 * w, 0, 0);
-		var f = new THREE.Vector3(0, 0, 0);
-		var g = new THREE.Vector3(0, 0, -2 * h);
-		var h = new THREE.Vector3(2 * w, 0, 0);
-
-		var edges1 =  [
-			new Edge(a, b),
-			new Edge(b, c),
-			new Edge(c, a)
-		];
-
-		
-		var edges2 =  [
-			new Edge(b, c),
-			new Edge(c, d),
-			new Edge(d, b)
-		];
-
-		var edges3 =  [
-			new Edge(f, e),
-			new Edge(e, g),
-			new Edge(g, f)
-		];
-
-		var edges4 =  [
-			new Edge(f, g),
-			new Edge(g, h),
-			new Edge(h, f),
-		];
-		
-
-		this.cells.push(new Cell(new Site(dum1), edges3));
-		this.cells.push(new Cell(new Site(dum2), edges4));
-		this.cells.push(new Cell(new Site(dum3), edges2));
-		this.cells.push(new Cell(new Site(dum4), edges1));
+	/*
+	 * generates a long line segment using the point slope formula
+	 * returns the left most point
+	 */
+	createLeftPoint(length) {
+		return new THREE.Vector3(-length, -length * this.m + this.b, 0);
 	}
 
-	drawSites() {
-		// draw sites
+	/*
+	 * generates a long line segment using the point slope formula
+	 * returns the right most point
+	 */
+	createRightPoint(length) {
+		return new THREE.Vector3(length, length * this.m + this.b, 0);
+	}
+
+	/*
+	 * draws a green line to represent the perpendicular bisector for debugging
+	 */
+	draw(scene) {
+		var a = this.createLeftPoint(20);
+		var b = this.createRightPoint(20)
+
+		var geometry = new THREE.Geometry();
+		var material = new THREE.LineBasicMaterial({ color: 0xffff00 });
+		geometry.vertices.push(a);
+		geometry.vertices.push(b);
+		
+		var line = new THREE.Line(geometry, material);
+		this.lineGeo = line;
+		
+		scene.add(line);
+	}
+
+	/*
+	 * draws all the intersections with this pb and other pbs
+	 * colors them in order along the x-axis
+	 * do not use blue as the initial color!
+	 */
+	drawIntersections(color, scene, size) {
+		var colors = [];
 		var dotGeometry = new THREE.Geometry();
-		this.sites.forEach(function (site) {
-			dotGeometry.vertices.push(site.geoPos);
-			var color = new THREE.Color();
-			color.setRGB(1, 0, 0);
-			this.colors.push(color);
+
+		// amount the color adds blue to the current color
+		var colorOffset = 0.0;
+		var interval = 1.0 / this.intersections.length;
+
+		// adds each intersection, coloring them according to their order
+		this.intersections.forEach(function (point) {
+			dotGeometry.vertices.push(point);
+			var c = color.clone();
+			c.setRGB(c.r, c.g, c.b + colorOffset);
+			colors.push(c);
+			colorOffset += interval;
 		}, this);
 
-		
+		dotGeometry.colors = colors;
+		var dotMaterial = new THREE.PointsMaterial( {size: size, vertexColors: THREE.VertexColors} );
+
+		var dots = new THREE.Points(dotGeometry, dotMaterial);
+		this.isectGeo = dots;
+		scene.add (dots);
 	}
 
-	drawCells() {
-		var dotGeometry = new THREE.Geometry();
-		this.cells.forEach(function (cell) {
-			dotGeometry.vertices.push(cell.site.geoPos);
-			var color = new THREE.Color();
-			color.setRGB(1, 0, 0);
-			this.colors.push(color);
+	/*
+	 * using the endpoints for an edge e and an edge o, get the point of intersection
+	 * important: returns undefined if there is no intersection
+	 */
+	intersectionTest(e0, e1, o0, o1) {
+		// convert to Ax + By = C form
+		var A1 = e1.y - e0.y;
+		var B1 = e0.x - e1.x;
+		var C1 = A1 * e0.x + B1 * e0.y;
+		
+		var A2 = o1.y - o0.y;
+		var B2 = o0.x - o1.x;
+		var C2 = A2 * o0.x + B2 * o0.y;
 
-			cell.edges.forEach(function(edge) {
-				var geometry = new THREE.Geometry();
-				var material = new THREE.LineBasicMaterial({ color: 0xff0000, linewidth: 4});
-				geometry.vertices.push(edge.a);
-				geometry.vertices.push(edge.b);
-				var line = new THREE.Line(geometry, material);
-				this.edgeGeo.push(line);
-				this.scene.add(line);
-			}, this);
+		var det = A1 * B2 - A2 * B1;
+
+		// parallel lines
+		if (Math.abs(det) < 0.001) {
+			return undefined;
+		} else { 
+			var x = (B2 * C1 - B1 * C2) / det;
+			var y = (A1 * C2 - A2 * C1) / det;
+			var intersection = new THREE.Vector3(x, y, 0);
+			return intersection;
+		}
+	}
+
+	/*
+	 * returns the intersection between this and the other pb
+	 * important: returns undefined if there is no intersection
+	 */
+	getIntersection(other) {
+		var e0 = this.createLeftPoint(20);
+		var e1 = this.createRightPoint(20);
+		var o0 = other.createLeftPoint(20);
+		var o1 = other.createRightPoint(20);
+
+		return this.intersectionTest(e0, e1, o0, o1);
+	}
+
+	/*
+	 * returns the intersection between this and 
+	 * a normal (line from the site to a neighbor)
+	 * important: returns undefined if there is no intersection
+	 */
+	getIntersectionNormal(normalStart, normalEnd) {
+		var e0 = this.createLeftPoint(20);
+		var e1 = this.createRightPoint(20);
+		var o0 = normalStart;
+		var o1 = normalEnd;
+
+		return this.intersectionTest(e0, e1, o0, o1);
+	}
+}
+
+/*
+ * using the set of points, compute the voronoi cell for each point
+ */
+class Voronoi {
+	constructor(points, scene, gridSize) {
+		this.points = points;
+		this.scene = scene;
+		this.grid = [];
+		this.dotGeos = [];
+		this.convexHullGeos = [];
+
+		// draw the sites
+		this.drawDotGeometry(scene, points, new THREE.Color().setRGB(1, 0, 0), 0.02);
+		
+		// maps random points in a dictionary so they can be accessed by their voxel
+		this.processPoints();
+		
+		// computes the cells for each random point
+		this.points.forEach(function (point) {
+		 	var x = Math.floor(point.x);
+		 	var y = Math.floor(point.y);
+
+		 	// remove gross "edge" cases
+		 	if (x > -gridSize / 2 && x <  gridSize / 2 - 1 &&
+		 		y > -gridSize / 2 && y < gridSize / 2 - 1) {
+		 		this.computeCell(Math.floor(point.x), Math.floor(point.y), new THREE.Color().setRGB(Math.random() + 0.2, Math.random() + 0.2, Math.random() + 0.2))
+		 	} 	
+		 }, this);
+	}
+
+	/*
+	 * maps the points to their voxels in this.grid
+	 */
+	processPoints() {
+		this.points.forEach(function (point) {
+			if (this.grid[Math.floor(point.x)] == undefined) this.grid[Math.floor(point.x)] = [];
+			this.grid[Math.floor(point.x)][Math.floor(point.y)] = point;
 		}, this);
-		console.log(dotGeometry);
-		// create the site geometry and set up the scene
-		dotGeometry.colors = this.colors;
-		var dotMaterial = new THREE.PointsMaterial( {size: 1, vertexColors: THREE.VertexColors} );
-		if (this.siteMesh) this.scene.remove(this.siteMesh);
-
-		this.siteMesh = new THREE.Points(dotGeometry, dotMaterial);
-		
-		this.scene.add(this.siteMesh);
-
-
 	}
 
-	drawScene() {
-		this.drawCells();
-	}
-
-	generateSites() {
+	/*
+	 * draws a set of points
+	 */
+	drawDotGeometry(scene, points, color, size) {
+		var colors = [];
 		var dotGeometry = new THREE.Geometry();
-		var temp = [];
-		for (var i = 0; i < this.mapVerts.length; i++) {
-			var x = this.mapVerts[i].x;
-			var z = this.mapVerts[i].y;
-			var site = new Site(new THREE.Vector3(x, 0, z));
-			site.fromMapPoint(this.mapVerts[i]);
-			var clipped = this.clipped(site.geoPos);
-			var onLand = this.water.onLand(site.mapPos);
-			if (!clipped && onLand) {
-				temp.push(site);
-				site.t = this.water.t(site.mapPos);
+		points.forEach(function (point) {
+			dotGeometry.vertices.push(point);
+			colors.push(color.clone());
+		}, this);
+
+		dotGeometry.colors = colors;
+		var dotMaterial = new THREE.PointsMaterial( {size: size, vertexColors: THREE.VertexColors} );
+
+		// store just in case we wanna remove
+		this.dotGeos.push(dots);
+		var dots = new THREE.Points(dotGeometry, dotMaterial);
+		scene.add (dots);
+	}
+
+	/*
+	 * returns the convex hull (set of points that outline the cell)
+	 */
+	computeCell(x, y, color) {
+		// check cells in 6x6 surrounding and collect them
+		// calculate the perpendicular bisectors for each of the neighbors
+		var neighbors = [];
+		var pbs = [];
+		var offset = 3;
+		var point = this.grid[x][y];
+		for (var i = -offset; i <= offset; i++) {
+			for (var j = -offset; j <= offset; j++) {
+				if (this.grid[x + i] !== undefined) {
+					var row = this.grid[x + i];
+					if (row[y + j] !== undefined) {
+						if (!(i == 0 && j == 0))  {
+							neighbors.push(row[y + j]);
+							
+// UNCOMMENT TO VISUALIZE THE NEIGHBORS / NORMALS
+							// var geometry = new THREE.Geometry();
+							// var material = new THREE.LineBasicMaterial({ color: 0x00ff00 });
+							// geometry.vertices.push(row[y + j]);
+							// geometry.vertices.push(point);
+							// var line = new THREE.Line(geometry, material);
+							// this.edgeGeo.push(line);
+							// this.scene.add(line);
+
+							var pb = new HalfPlane(row[y + j], this.grid[x][y]);
+
+// UNCOMMENT THIS IF YOU WANNA DRAW THE PBS
+							//pb.draw(this.scene);
+							pbs.push(pb);
+						}
+					} 
+				} 
 			}
 		}
 
-		// sort the sites by their noise value
-		
-		temp.sort(function(a, b) {
-			return b.t - a.t;
-		});
-		
+		// holds all the intersections between all the pbs in the scene
+		var intersections = [];
 
-		// save the n highest value sites
-		var length = temp.length > this.numPoints ? this.numPoints : temp.length;
-		for (var i = 0; i < length; i++) {
-			//this.sites
-			//.push(temp[i]);
+		// slice the pbs into segments according to their intersections with other pbs
+		for (var i = 0; i < pbs.length; i++) {
+			for (var j = i + 1; j < pbs.length; j++) {
+				var isect = pbs[i].getIntersection(pbs[j]);
+				
+				// store the intersections in the pbs
+				if (isect !== undefined) {
+					pbs[i].intersections.push(isect);
+					pbs[j].intersections.push(isect);
+					intersections.push(isect);
+				}
+			}
 		}
-		var left = new Site(new THREE.Vector3(1, 0, 1));
-		left.id = "left";
-		this.sites.push(left);
 
-		var right = new Site(new THREE.Vector3(0, 0, -1));
-		right.id = "right";
-		this.sites.push(right);
-		//this.sites.push(new Site(new THREE.Vector3(-5, 0, -7)));
-		//this.sites.push(new Site(new THREE.Vector3(-2, 0, 5)));
-		//this.sites.push(new Site(new THREE.Vector3(4.5, 0, -5)));
-	}
-
-	clipped(vert) {
-		return (vert.z > (this.mapData.gridSize / 2) - 1)
-		|| (vert.x > (this.mapData.gridSize / 2) - 1);
-	}
-
-	remove() {
-		this.scene.remove(this.siteMesh);
-		this.edgeGeo.forEach(function (line) {
-			this.scene.remove(line);
+		// sort the pb-pb intersections along the lines by x coordinate
+		pbs.forEach(function (pb) {
+			pb.intersections.sort(function (a, b) {
+				return a.x - b.x;
+			})
+// UNCOMMENT TO VISUALIZE THE INTERSECTIONS FOR THIS PB
+			//pb.drawIntersections(new THREE.Color().setRGB(1, 0, 0), this.scene, 0.2);
 		}, this);
+		
+		var closestIntersections = []; // closest intersections for all neighbors
+		var closestGeo = []; // holds the dot geometry
+
+		// wrapper to hold the normal-pb intersections and the pbs
+		var PBIntersection = function(pb, intersection) {
+			this.pb = pb;
+			this.intersection = intersection;
+		};
+		
+		// for each neighbor, perform an "intersection feeler" test
+		// essentially, test for intersections for the normals, 
+		// and try to compute the closest segment.
+		// the closest segment that a normal intersects with is the cell border for the voronoi.
+		neighbors.forEach(function (neighbor) {
+			var neighborIntersections = [];
+			pbs.forEach(function (pb) {
+				var isect = pb.getIntersectionNormal(point, neighbor);
+				if (isect !== undefined) {
+					neighborIntersections.push(new PBIntersection(pb, isect));
+				}
+			}, this);
+
+			
+			// find the closest intersection with a pb for this neighbor normal
+			var toNeighbor = new THREE.Vector3().subVectors(neighbor, point);
+			var minimum = neighborIntersections[0];
+			var minDistance = minimum.intersection.distanceTo(point);
+			for (var i = 0; i < neighborIntersections.length; i++) {
+				var isect = neighborIntersections[i].intersection;
+				var toIntersection = new THREE.Vector3().subVectors(isect, point);
+				var distance = isect.distanceTo(point);
+				
+				// test if the closest intersection is in the same direction as the ray
+				// filter out the intersections that are "behind" the normal
+				if (distance < minDistance && toNeighbor.dot(toIntersection) > 0) {
+					minimum = neighborIntersections[i];
+					minDistance = distance;
+				}
+			}
+
+			// keep only the closest intersections
+			closestIntersections.push(minimum);
+			closestGeo.push(minimum.intersection);
+		}, this);
+
+// UNCOMMENT TO DRAW THE CLOSEST INTERSECTIONS WITH THE NEIGHBOR NORMALS
+		//this.drawDotGeometry(this.scene, closestGeo, new THREE.Color().setRGB(0.3, 0.3, 1), 0.1);
+
+		// find the segments along the pb for the points and all them to the convex hull
+		// remember that the segments are sorted along x.
+		// the segment for this edge against this neighbor is the one where the intersection with the normal
+		// lies between.
+		var segmentPoints = [];
+		closestIntersections.forEach(function (pbIsect) {
+			var pb = pbIsect.pb;
+			var isect = pbIsect.intersection;
+			for (var i = 1; i < pb.intersections.length; i++) {
+				if (isect.x < pb.intersections[i].x) {
+					segmentPoints.push(pb.intersections[i - 1]);
+					segmentPoints.push(pb.intersections[i]);
+					break;
+				}
+			}
+		});
+
+		// draw the endpoints for these segments
+		this.drawDotGeometry(this.scene, segmentPoints, new THREE.Color().setRGB(0.3, 0.3, 1), 0.1);
+
+		// essentially sorts the points passed in to get the order drawing the polygon
+		var convexHull = this.computeConvexHull(segmentPoints);
+		this.drawConvexHull(this.scene, convexHull, color);
+
+// UNCOMMENT TO DRAW ALL THE INTERSECTIONS WITH EACH OF THE PBS
+		//this.drawDotGeometry(this.scene, intersections, new THREE.Color().setRGB(1, 0, 1), 0.1);
 	}
 
-	show() {
-		this.scene.add(this.siteMesh);
-		this.edgeGeo.forEach(function (line) {
-			this.scene.add(line);
-		}, this);
+	/*
+	Suppose we are given a line defined by points A and B, 
+	and a point P which we want to test. To do this we calculate 
+	the cross product (P - A) x (B - A). If P would be to our 
+	right as we walk along the vector from A to B, 
+	this value will be positive. 
+	If P would be to our left it will be negative. 
+	If P is on the line AB then it will be zero.
+	*/
+	IsLeft(a, b, c) {
+		
+		return ((b.x - a.x)*(c.y - a.y) - (b.y - a.y)*(c.x - a.x)) > 0;
+	}
+
+	/*
+	 * compute the convex hull for a set of points -
+	 * order for the border of this polygon in clockwise.
+	 * uses the gift wrapping algorithm!
+	 */
+	computeConvexHull (points) {
+		// compute random triangulation
+		var triangulation = [];
+		var edgeStack = [];
+		
+		// store the points in some random order
+		var unordered = points.slice();
+
+		// points is going to hold the points in order of their x values
+		points.sort(function (a, b) {
+			return a.x - b.x;
+		});
+
+		var i = 0;
+		var currentPoint = points[0];
+		var endpoint = unordered[0];
+		var vertices = [];
+
+		// finds the leftmost turn from this current point on the hull		
+		do {
+			vertices.push(currentPoint);
+			endpoint = unordered[0];
+			for (var j = 1; j < unordered.length; j++) {
+				if ((endpoint === currentPoint) || 
+					this.IsLeft(currentPoint, endpoint, unordered[j])) {
+					endpoint = unordered[j];
+				}
+			}
+			i++;
+			currentPoint = endpoint;
+
+		// prevents infinite loop
+		} while (i < unordered.length * 2 && !(endpoint === vertices[0]));
+		
+		return vertices;
+	}
+
+	/*
+	 * draw the polygon created by these points stored in "convex hull"
+	 */
+	drawConvexHull(scene, convexHull, color) {
+		var lines = [];
+		for (var i = 0; i < convexHull.length - 1; i++) {
+			var geom = new THREE.Geometry();
+			geom.vertices.push(convexHull[i]);
+			geom.vertices.push(convexHull[i + 1]);
+			var material = new THREE.LineBasicMaterial( { color: color });
+			var line = new THREE.Line(geom, material);
+			lines.push(line);
+			scene.add(line);
+		}
+
+		// add another line for the last point to the start point, close the polygon
+		var geom = new THREE.Geometry();
+		geom.vertices.push(convexHull[convexHull.length - 1]);
+		geom.vertices.push(convexHull[0]);
+		var material = new THREE.LineBasicMaterial( { color: color });
+		var line = new THREE.Line(geom, material);
+		lines.push(line);
+		scene.add(line);
+
+		// store the convex hull just in case we want to remove this geometry
+		this.convexHullGeos.push(lines);
 	}
 }
 
 export default {
 	Voronoi: Voronoi
 }
-
-/*
-					if (distSite < distA && distSite < distB) {
-						// Check if the distance between the site and the pb is less than
-						// both points of the edge. If it is, we ignore that edge.
-						console.log("intersection");
-						// If one of the points is closer and the other is farther,
-						// find the intersection point between the edge and the pb.
-						
-						// edge in slope intersect
-						var A1 = e.b.z - e.a.z;
-						var B1 = e.a.x - e.b.x;
-						var C1 = A1 * e.a.x + B1 * e.a.z;
-
-						var A2 = -pb.m;
-						var B2 = 1;
-						var C2 = pb.b;
-
-						var det = A1 * B2 - A2 * B1;
-						if (Math.abs(det) < 0.001) {
-							// parallel lines
-						} else {
-							// add new point of intersection
-							var x = (B2 * C1 - B1 * C2) / det;
-               				var y = (A1 * C2 - A2 * C1) / det;
-               				var intersection = new THREE.Vector3(x, 0, y);
-							criticalPoints.push(intersection);
-						}
-					} 
-					else if (distA < distSite && distB < distSite) {
-						// If both points of the edge have distance less than the
-						// distance to pb, delete the edge.
-						console.log("delete");
-						e.delete = true;
-					} else {
-						console.log("intersection");
-						// If one of the points is closer and the other is farther,
-						// find the intersection point between the edge and the pb.
-						
-						// edge in slope intersect
-						var A1 = e.b.z - e.a.z;
-						var B1 = e.a.x - e.b.x;
-						var C1 = A1 * e.a.x + B1 * e.a.z;
-
-						var A2 = -pb.m;
-						var B2 = 1;
-						var C2 = pb.b;
-
-						var det = A1 * B2 - A2 * B1;
-						if (Math.abs(det) < 0.001) {
-							// parallel lines
-						} else {
-							// add new point of intersection
-							var x = (B2 * C1 - B1 * C2) / det;
-               				var y = (A1 * C2 - A2 * C1) / det;
-               				var intersection = new THREE.Vector3(x, 0, y);
-							criticalPoints.push(intersection);
-
-							// set closer point to intersection to clip
-							if (distA < distB) {
-								e.a = intersection;
-							} else {
-								e.b = intersection;
-							}
-						}
-					}
-					*/

@@ -1,5 +1,7 @@
 const THREE = require('three');
 import Noise from './noise.js'
+
+// IQ Color Pallete Helper Function
 var a = new THREE.Vector3(0.5, 0.5, 0.5);
 var b = new THREE.Vector3(0.5, 0.500, 0.500);
 var c = new THREE.Vector3(1, 1, 1);
@@ -14,14 +16,7 @@ function palleteColor(a, b, c, t, d) {
 	c.z = Math.cos(c.z);
 	c.multiply(b);
 	c.add(a);
-	//console.log(c);
 	return new THREE.Color(c.x, c.y, c.z);
-}
-
-function Voxel () {
-	this.vertex;
-	this.value;
-	this.color; // for debugging
 }
 
 class Map {
@@ -29,7 +24,7 @@ class Map {
 	constructor(scene, gridSize, gridDetail, smoothFactor, visualizationScheme, landThreshold) {
 		var planeGeo = new THREE.PlaneGeometry(gridSize, gridSize, 
 		gridDetail * gridSize, gridDetail * gridSize);
-		var planeMat = new THREE.MeshBasicMaterial({wireframe: true, color: 0x0000ff, vertexColors: THREE.VertexColors, side: THREE.DoubleSide });
+		var planeMat = new THREE.MeshBasicMaterial({wireframe: true, color: 0x000000, vertexColors: THREE.VertexColors, side: THREE.DoubleSide });
 		this.mesh = new THREE.Mesh(planeGeo, planeMat);
 		this.geo = planeGeo;
 		this.scene = scene;
@@ -42,12 +37,12 @@ class Map {
 		this.normalizeVertices();
 		//this.scene.add(this.mesh);
 		this.points;
-		this.generatePoints();
+		this.generateVoronoiSites();
 		
 		//this.generateColors();
 	}
 
-	generatePoints() {
+	generateVoronoiSites() {
 	var testPoints = [];
 	var random = function (a, b, c) {
 		var x = new THREE.Vector3(a, b, c);
@@ -60,13 +55,14 @@ class Map {
 		var v = this.mesh.geometry.vertices[i];
 		var x = v.x + 0.5 * random(v.x, v.y, v.z) + 0.25;
 		var y = v.y + 0.5 * random(v.x, v.y, v.z) + 0.25;
+		x = v.x + Math.random();
+		y = v.y + Math.random();
 		//console.log(x);
 		//console.log(y)
 		if (v.x < this.gridSize / 2 && y < this.gridSize / 2) {
 			testPoints.push(new THREE.Vector3(x, y, 0));
 		}
 	}
-	console.log(testPoints)
 	this.points = testPoints;
 	}
 

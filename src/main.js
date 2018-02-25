@@ -4,8 +4,6 @@ const VORONOI = require('voronoi')
 import Framework from './framework'
 import MapData from './mapdata.js'
 import Voronoi from './voronoi.js'
-import Delauney from './delauney.js'
-import SimpleVoronoi from './simplevoronoi.js'
 var objLoader = new THREE.OBJLoader();
 
 var gridSize = 10;
@@ -54,7 +52,7 @@ function onLoad(framework) {
   //triangulation.draw(scene);
   //triangulation.drawFlip(scene);
 
-  var voronoi = new SimpleVoronoi.SimpleVoronoi(waterMap.points, scene);
+  var voronoi = new Voronoi.Voronoi(waterMap.points, scene, gridSize);
   //var voronoi = new Voronoi();
   var bbox = {xl: 0, xr: 800, yt: 0, yb: 600}; // xl is x-left, xr is x-right, yt is y-top, and yb is y-bottom 
   var sites = [ {x: 200, y: 200}, {x: 50, y: 250}, {x: 400, y: 100} /* , ... */ ]
