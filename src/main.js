@@ -1,21 +1,31 @@
 
 const THREE = require('three'); // older modules are imported like this. You shouldn't have to worry about this much
-const VORONOI = require('voronoi')
 import Framework from './framework'
 import MapData from './mapdata.js'
 import Voronoi from './voronoi.js'
+import Grid from './biocrowds.js'
 var objLoader = new THREE.OBJLoader();
 
-var gridSize = 10;
+var gridSize = 20; // size of the plane
 var gridDetail = 1; // number of samples for unit square
-var smoothFactor = 5;
-var landThreshold = 0.3;
+var smoothFactor = 5; // adjusts the smoothness of the noise
+var landThreshold = 0.3; // threshold for when a vertex is on land or over water
 
-
+// different types of maps to be visualized
 var waterMap;
 var pplMap;
 var comboMap;
 
+// voronoi for street visualization
+var voronoi;
+
+// biocrowd grid
+var grid;
+
+// biocrwod gridSize
+var GRIDSIZE = gridSize;
+
+// object to hold current gui configurations
 var appConfig = function () {
     this.map = 'water';
     this.smoothFactor = smoothFactor;
@@ -24,40 +34,39 @@ var appConfig = function () {
     this.gridDetail = gridDetail;
     this.numPoints = 4;
 };
-var MapBundle = function () {
-    this.water;
-    this.pop;
-    this.scene;
-    this.gridSize;
+
+var crowdsConfig = function() {
+   this.scenario = "circle";
+   this.AGENT_SIZE = 0.1;
+   this.MORE_ROW_AGENTS = 0.4;
+   this.NUM_AGENTS = 20;
+   this.MARKER_DENSITY = 200;
+   this.RADIUS = 0.5;
+   this.CIRCLE_RADIUS = GRIDSIZE / 2;
+   this.TIMESTEP = .1;
+   this.markers = false;
 }
 
 var config = new appConfig();
-var mapBundle = new MapBundle();
+var biocrowdsConfig = new crowdsConfig();
+
 // called after the scene loads
 function onLoad(framework) {
   var scene = framework.scene;
-  waterMap = new MapData.WaterMap(scene, gridSize, gridDetail, smoothFactor, landThreshold);
-  pplMap = new MapData.PopulationMap(scene, gridSize, gridDetail, smoothFactor);
-  comboMap = new MapData.ComboMap(scene, gridSize, gridDetail, smoothFactor, landThreshold);
+
+  // map set up and street set up
+  waterMap = new MapData.WaterMap(scene, gridSize, gridDetail, 
+    smoothFactor, landThreshold);
+  pplMap = new MapData.PopulationMap(scene, gridSize, gridDetail, 
+    smoothFactor);
+  comboMap = new MapData.ComboMap(scene, gridSize, gridDetail, 
+    smoothFactor, landThreshold);
+  voronoi = new Voronoi.Voronoi(waterMap.points, scene, gridSize);
+
   waterMap.toggleDisplay(true);
   pplMap.toggleDisplay(false);
   comboMap.toggleDisplay(false);
 
-  mapBundle.water = waterMap;
-  mapBundle.pop = pplMap;
-  mapBundle.scene = scene;
-  mapBundle.gridSize = gridSize;
-
-  //var triangulation = new Delauney.Delauney(waterMap.points, scene);
-  //triangulation.draw(scene);
-  //triangulation.drawFlip(scene);
-
-  var voronoi = new Voronoi.Voronoi(waterMap.points, scene, gridSize);
-  //var voronoi = new Voronoi();
-  var bbox = {xl: 0, xr: 800, yt: 0, yb: 600}; // xl is x-left, xr is x-right, yt is y-top, and yb is y-bottom 
-  var sites = [ {x: 200, y: 200}, {x: 50, y: 250}, {x: 400, y: 100} /* , ... */ ]
-  //var diagram = voronoi.compute(sites, bbox);
-  // console.log(diagram)
   var camera = framework.camera;
   var renderer = framework.renderer;
   var gui = framework.gui;
@@ -74,6 +83,11 @@ function onLoad(framework) {
   camera.position.set(0, 0, 25);
   camera.lookAt(new THREE.Vector3(0,0,0));
   camera.updateProjectionMatrix();
+
+  // BIOCROWDS SET UP
+  // Set up plane 
+  grid = new Grid.Grid(scene, GRIDSIZE, GRIDSIZE, config, voronoi.tilesGrid);
+  grid.setup();
 
   // Gui variables
   gui.add(camera, 'fov', 0, 180).onChange(function(newVal) {
@@ -104,10 +118,12 @@ function onLoad(framework) {
     comboMap.generateColors();
   }
 
+  // recompute voronoi 
   var updateVoronoi = function() {
     voronoi.remove();
     voronoi = new Voronoi.Voronoi(mapBundle, config.numPoints);
   }
+
   // recompute the noise values according to the configurations
   var recomp = function () {
     waterMap.rewrite(config.gridSize, config.gridDetail);
@@ -117,6 +133,7 @@ function onLoad(framework) {
     vis();
   }
 
+  // GUI HANDLE
   gui.add(config, 'numPoints', 0, 200).onChange(function(newVal) {
     updateVoronoi();
   });
@@ -131,7 +148,6 @@ function onLoad(framework) {
 
   gui.add(config, 'gridSize', 0, 100).onChange(function(newVal) {
     recomp();
-    mapBundle.gridSize = newVal;
   });
 
   gui.add(config, 'gridDetail', 0, 10).onChange(function(newVal) {
@@ -142,17 +158,67 @@ function onLoad(framework) {
     recomp();
   });
 
-
-  gui.add(config, 'map', { water: 'water', population: 'population', combination: 'combination'}).onChange(function(value) {
+  gui.add(config, 'map', { water: 'water', 
+    population: 'population', 
+    combination: 'combination'}).onChange(function(value) {
     vis();
   });
 
-  
-}
+  // BIOCROWD PARAMS
+  gui.add(biocrowdsConfig, 'markers').onChange(function(newVal) {
+      grid.clearScene();
+      grid = new Grid.Grid(scene, GRIDSIZE, GRIDSIZE, biocrowdsConfig, voronoi.tilesGrid);
+      grid.setup();
+  });
 
+  gui.add(biocrowdsConfig, 'scenario', { Circle: 'circle', Rows: 'rows'}).onChange(function(value) {
+      grid.clearScene();
+      grid = new Grid.Grid(scene, GRIDSIZE, GRIDSIZE, biocrowdsConfig, voronoi.tilesGrid);
+      grid.setup();
+  });
+
+  gui.add(biocrowdsConfig, 'AGENT_SIZE', 0.1, 0.5).onChange(function(newVal) {
+      grid.clearScene();
+      grid = new Grid.Grid(scene, GRIDSIZE, GRIDSIZE, biocrowdsConfig, voronoi.tilesGrid);
+      grid.setup();
+  });
+
+  gui.add(biocrowdsConfig, 'MORE_ROW_AGENTS', 0, 0.4).onChange(function(newVal) {
+      grid.clearScene();
+      grid = new Grid.Grid(scene, GRIDSIZE, GRIDSIZE, biocrowdsConfig, voronoi.tilesGrid);
+      grid.setup();
+  });
+
+  gui.add(biocrowdsConfig, 'NUM_AGENTS', 0, 100).onChange(function(newVal) {
+      grid.clearScene();
+      grid = new Grid.Grid(scene, GRIDSIZE, GRIDSIZE, biocrowdsConfig, voronoi.tilesGrid);
+      grid.setup();
+  });
+
+  gui.add(biocrowdsConfig, 'MARKER_DENSITY', 0, 500).onChange(function(newVal) {
+       grid.clearScene();
+      grid = new Grid.Grid(scene, GRIDSIZE, GRIDSIZE, biocrowdsConfig, voronoi.tilesGrid);
+      grid.setup();
+  });
+
+  gui.add(biocrowdsConfig, 'RADIUS', 0.0, 10).onChange(function(newVal) {
+      grid.clearScene();
+      grid = new Grid.Grid(scene, GRIDSIZE, GRIDSIZE, biocrowdsConfig, voronoi.tilesGrid);
+      grid.setup();
+  });
+
+  gui.add(biocrowdsConfig, 'CIRCLE_RADIUS', 0, 10).onChange(function(newVal) {
+      grid.clearScene();
+      grid = new Grid.Grid(scene, GRIDSIZE, GRIDSIZE, biocrowdsConfig, voronoi.tilesGrid);
+      grid.setup();
+  });
+}
 
 // called on frame updates
 function onUpdate(framework) {
+  if (!(grid === undefined)) {
+    grid.tick();
+  }
 }
 
 // when the scene is done initializing, it will call onLoad, then on frame updates, call onUpdate

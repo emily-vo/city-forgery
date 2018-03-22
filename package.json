@@ -15,9 +15,9 @@
     "gl-matrix": "^2.3.2",
     "stats-js": "^1.0.0-alpha1",
     "three": "^0.82.1",
-    "voronoi" : "^1.0.0",
     "three-obj-loader": "^1.0.2",
-    "three-orbit-controls": "^82.1.0"
+    "three-orbit-controls": "^82.1.0",
+    "threejs-slice-geometry": "^0.2.2"
   },
   "devDependencies": {
     "babel-core": "^6.18.2",
