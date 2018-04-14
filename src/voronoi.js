@@ -1,8 +1,4 @@
 const THREE = require('three')
-import Noise from './noise.js'
-//import Slice from './slice.js'
-//var SLICE = require('./slice.js')
-//console.log(SLICE)
 
 // IQ Color Pallete Helper Function
 var a = new THREE.Vector3(0.5, 0.5, 0.5);
@@ -114,9 +110,6 @@ class Tile {
 		}
 
 		// calculate midpoint
-		var t = Noise.ThreeDNoise(midpoint.x * 2, midpoint.y * 2, midpoint.z * 2);
-		var pColor = palleteColor(a, b, c, t, d);
-		//var color = new THREE.Color().setRGB(pColor.r, pColor.g, pColor.b);
 		var color = new THREE.Color().setRGB(0.1, 0.1, 0.1);
 		var mesh = new THREE.Mesh(geom, 
 			new THREE.MeshBasicMaterial({ 
