@@ -1,5 +1,4 @@
 const THREE = require('three');
-import Noise from './noise.js'
 
 // IQ Color Pallete Helper Function
 var a = new THREE.Vector3(0.5, 0.5, 0.5);
@@ -87,7 +86,7 @@ class Map {
 				testPoints.push(new THREE.Vector3(x, y, 0));
 			}
 		}
-		this.points = testPoints;
+		return testPoints;
 	}
 
 	/*

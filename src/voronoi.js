@@ -1,5 +1,4 @@
 const THREE = require('three')
-const Slice = require('threejs-slice-geometry');
 import Noise from './noise.js'
 //import Slice from './slice.js'
 //var SLICE = require('./slice.js')
@@ -118,7 +117,7 @@ class Tile {
 		var t = Noise.ThreeDNoise(midpoint.x * 2, midpoint.y * 2, midpoint.z * 2);
 		var pColor = palleteColor(a, b, c, t, d);
 		//var color = new THREE.Color().setRGB(pColor.r, pColor.g, pColor.b);
-		var color = new THREE.Color().setRGB(0.3, 0.3, 0.3);
+		var color = new THREE.Color().setRGB(0.1, 0.1, 0.1);
 		var mesh = new THREE.Mesh(geom, 
 			new THREE.MeshBasicMaterial({ 
 				color: color, 
@@ -131,7 +130,7 @@ class Tile {
 		let offset = box.getCenter();
 		mesh.geometry.center();
 
-		var r = Math.random() * (1.0 - scale) * 0.9;
+		var r = Math.random() * (1.0 - scale);
 		mesh.scale.set(scale + r, scale
 			+ r, scale + r);
 		mesh.position.set(offset.x, offset.y, offset.z);
@@ -166,10 +165,13 @@ class Tile {
 		offset = box.getCenter();
 		mesh.geometry.center();
 
-		mesh.scale.x *= 0.5;
-		mesh.scale.y *= 0.5;
-		mesh.scale.z *= 0.5;
+		mesh.scale.x *= 0.8;
+		mesh.scale.y *= 0.8;
+		mesh.scale.z *= 0.8;
 		mesh.position.set(offset.x, offset.y, offset.z);
+
+		// // make sure that the mesh geometry holds the actual vert values
+		resetTransform(mesh);
 
 		// get the edges of the smaller boundary
 		this.points = [];
@@ -186,12 +188,12 @@ class Tile {
 		this.innerEdges.push(new Edge(this.points[this.points.length - 1].clone(), this.points[0].clone()));
 
 		// // make sure that the mesh geometry holds the actual vert values
-		resetTransform(mesh);
+		//resetTransform(mesh);
 
 		// get mesh edges
 		
 		// add the Tile to the scene
-		scene.add (mesh);
+		//scene.add (mesh);
 
 		this.mesh = mesh;
 		// store center
@@ -219,10 +221,10 @@ class Voronoi {
 		this.convexHulls = [];
 		this.tiles = [];
 		this.tilesGrid = [];
-
+		this.smallTiles = [];
 
 		// draw the sites
-		this.drawDotGeometry(scene, points, new THREE.Color().setRGB(1, 0, 0), 0.02);
+		//this.drawDotGeometry(scene, points, new THREE.Color().setRGB(1, 0, 0), 0.02);
 		
 		// maps random points in a dictionary so they can be accessed by their voxel
 		this.processPoints();
@@ -244,7 +246,7 @@ class Voronoi {
 		 			new THREE.Color().setRGB(Math.random() + 0.2, 
 		 				Math.random() + 0.2, Math.random() + 0.2));
 		 		this.convexHulls.push(ch);
-		 		var tile = new Tile(ch, 0.6, scene);
+		 		var tile = new Tile(ch, 0.8, scene);
 		 		this.tiles.push(tile);
 		 		var row = this.tilesGrid[x];
 		 		this.tilesGrid[x] = row === undefined ? [] : row;
@@ -430,7 +432,7 @@ class Voronoi {
 		var convexHull = computeConvexHull(segmentPoints);
 		
 // UNCOMMENT TO DRAW THE CONVEX HULLS
-		//this.drawConvexHull(this.scene, convexHull, color);
+		this.drawConvexHull(this.scene, convexHull, color);
 
 		return convexHull;
 
@@ -442,13 +444,21 @@ class Voronoi {
 	 * draw the Tile created by these points stored in "convex hull"
 	 */
 	drawConvexHull(scene, convexHull, color) {
-		var lines = [];
+		//if (this.convexHullGeos.length == 0) {
+			var lines = [];
 		for (var i = 0; i < convexHull.length - 1; i++) {
 			var geom = new THREE.Geometry();
 			geom.vertices.push(convexHull[i]);
 			geom.vertices.push(convexHull[i + 1]);
-			var material = new THREE.LineBasicMaterial( { color: color });
+			geom.computeLineDistances();
+			var material = new THREE.LineDashedMaterial( {
+				color: 0xffffff,
+				linewidth: 1,
+				dashSize: 0.01,
+				gapSize: 0.01,
+			} );
 			var line = new THREE.Line(geom, material);
+			//line.computeLineDistances();
 			lines.push(line);
 			scene.add(line);
 		}
@@ -457,13 +467,23 @@ class Voronoi {
 		var geom = new THREE.Geometry();
 		geom.vertices.push(convexHull[convexHull.length - 1]);
 		geom.vertices.push(convexHull[0]);
-		var material = new THREE.LineBasicMaterial( { color: color });
+		geom.computeLineDistances();
+		var material = new THREE.LineDashedMaterial( {
+			color: 0xffffff,
+			linewidth: 1,
+			dashSize: .01,
+			gapSize: .01,
+		} );
+		//var material = new THREE.LineBasicMaterial( { color: color });
 		var line = new THREE.Line(geom, material);
+
 		lines.push(line);
 		scene.add(line);
 
 		// store the convex hull just in case we want to remove this geometry
 		this.convexHullGeos.push(lines);
+		//}
+		
 	}
 }
 
@@ -618,5 +638,7 @@ export default {
 	Voronoi: Voronoi,
 	Edge: Edge,
 	Tile: Tile,
-	HalfPlane: HalfPlane
+	HalfPlane: HalfPlane,
+	computeConvexHull: computeConvexHull,
+	resetTransform: resetTransform
 }

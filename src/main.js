@@ -1,20 +1,26 @@
 
-const THREE = require('three'); // older modules are imported like this. You shouldn't have to worry about this much
-import Framework from './framework'
+require('file-loader?name=[name].[ext]!../index.html');
+const THREE = require('three');
+const OrbitControls = require('three-orbit-controls')(THREE)
+const OBJLoader = require('three-obj-loader')(THREE)
+
+import Stats from 'stats-js'
+import DAT from 'dat-gui'
+
+import {setupGUI} from './setup'
+
 import MapData from './mapdata.js'
 import Voronoi from './voronoi.js'
 import Grid from './biocrowds.js'
-var objLoader = new THREE.OBJLoader();
+import Building from './building.js'
 
-var gridSize = 20; // size of the plane
-var gridDetail = 1; // number of samples for unit square
-var smoothFactor = 5; // adjusts the smoothness of the noise
-var landThreshold = 0.3; // threshold for when a vertex is on land or over water
+// global timer for shader updates
+var clock = new THREE.Clock(false);
+clock.start();
 
-// different types of maps to be visualized
-var waterMap;
-var pplMap;
-var comboMap;
+// size of the city plane
+var gridSize = 10; 
+var gridDetail = 1;
 
 // voronoi for street visualization
 var voronoi;
@@ -22,204 +28,223 @@ var voronoi;
 // biocrowd grid
 var grid;
 
-// biocrwod gridSize
-var GRIDSIZE = gridSize;
+// all buildings in the city
+var buildings = [];
 
-// object to hold current gui configurations
-var appConfig = function () {
-    this.map = 'water';
-    this.smoothFactor = smoothFactor;
-    this.landThreshold = landThreshold;
-    this.gridSize = gridSize;
-    this.gridDetail = gridDetail;
-    this.numPoints = 4;
-};
-
+// GUI control parameters 
 var crowdsConfig = function() {
    this.scenario = "circle";
-   this.AGENT_SIZE = 0.1;
-   this.MORE_ROW_AGENTS = 0.4;
-   this.NUM_AGENTS = 20;
-   this.MARKER_DENSITY = 200;
-   this.RADIUS = 0.5;
-   this.CIRCLE_RADIUS = GRIDSIZE / 2;
+   this.MORE_ROW_AGENTS = 0.7;
+   this.NUM_CIRCLE_AGENTS = 20;
+   this.MARKER_DENSITY = 256;
+   this.RADIUS = 0.2;
+   this.CIRCLE_RADIUS = gridSize / 2;
    this.TIMESTEP = .1;
-   this.markers = false;
+   this.SHOW_VORONOI = true;
 }
 
-var config = new appConfig();
 var biocrowdsConfig = new crowdsConfig();
+var buildings = [];
+
 
 // called after the scene loads
-function onLoad(framework) {
-  var scene = framework.scene;
+window.addEventListener('load', function() {
+  /*
+   * WINDOW AND SCENE SET UP
+   */
+  // set up the stats gui bar
+  var stats = new Stats();
+  stats.setMode(1);
+  stats.domElement.style.position = 'absolute';
+  stats.domElement.style.left = '0px';
+  stats.domElement.style.top = '0px';
+  document.body.appendChild(stats.domElement);
+  
+  // set up the gui and its framework
+  var gui = new DAT.GUI();
+  var framework = {
+    gui: gui,
+    stats: stats
+  };
 
-  // map set up and street set up
-  waterMap = new MapData.WaterMap(scene, gridSize, gridDetail, 
-    smoothFactor, landThreshold);
-  pplMap = new MapData.PopulationMap(scene, gridSize, gridDetail, 
-    smoothFactor);
-  comboMap = new MapData.ComboMap(scene, gridSize, gridDetail, 
-    smoothFactor, landThreshold);
-  voronoi = new Voronoi.Voronoi(waterMap.points, scene, gridSize);
+  // scene, camera, and renderer initialization
+  var scene = new THREE.Scene();
+  var camera = new THREE.PerspectiveCamera( 75, window.innerWidth / window.innerHeight, 0.1, 1000 );
+  var renderer = new THREE.WebGLRenderer( { antialias: true } );
+  renderer.setPixelRatio(window.devicePixelRatio);
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setClearColor(0x000000, 1.0);
+  document.body.appendChild(renderer.domElement);
 
-  waterMap.toggleDisplay(true);
-  pplMap.toggleDisplay(false);
-  comboMap.toggleDisplay(false);
+  // restrict camera movement for user
+  var controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.enableZoom = true;
+  controls.enablePan = true;
+  controls.enableKeys = true;
+  controls.rotateSpeed = 0.3;
+  controls.zoomSpeed = 1.0;
+  controls.panSpeed = 2.0;
+  controls.maxAzimuthAngle = Math.PI / 3;
+  controls.minAzimuthAngle = -Math.PI / 3;
+  controls.minPolarAngle = Math.PI / 3;
+  controls.maxPolarAngle = Math.PI;
 
-  var camera = framework.camera;
-  var renderer = framework.renderer;
-  var gui = framework.gui;
-  var stats = framework.stats;
-
-  // Scene set up
+  // light and camera set up
   var directionalLight = new THREE.DirectionalLight( 0xffffff, 1 );
   directionalLight.color.setHSL(0.1, 1, 0.95);
   directionalLight.position.set(1, 3, 2);
   directionalLight.position.multiplyScalar(10);
 
-  scene.add(directionalLight);
-
+  scene.add(directionalLight.clone());
+  directionalLight.position.set(1, -3, -2);
+  scene.add(directionalLight.clone());
   camera.position.set(0, 0, 25);
   camera.lookAt(new THREE.Vector3(0,0,0));
   camera.updateProjectionMatrix();
 
-  // BIOCROWDS SET UP
-  // Set up plane 
-  grid = new Grid.Grid(scene, GRIDSIZE, GRIDSIZE, config, voronoi.tilesGrid);
+  /*
+   * STREET SET UP (VORONOI DIAGRAM)
+   */
+  var map = new MapData.WaterMap(scene, gridSize, gridDetail, 12, 0.3);
+  var points = map.generateVoronoiSites();
+  voronoi = new Voronoi.Voronoi(points, scene, gridSize);
+
+  /*
+   * BIOCROWDS SET UP
+   */
+  // write the voronoi data to the plane, which is then passed to the biocrowds grid
+  grid = new Grid.Grid(scene, gridSize, gridSize, biocrowdsConfig, voronoi.tilesGrid);
+  var voronoiPlane = grid.writeVoronoi(biocrowdsConfig.MARKER_DENSITY);
+  grid.plane = voronoiPlane;
+  if (biocrowdsConfig.SHOW_VORONOI) scene.add(voronoiPlane);
   grid.setup();
+  
+  /*
+   * BUILDING SET UP
+   */
+  // param determines number of buildings per unit square
+  var buildingSpawnDetail = 2; 
 
-  // Gui variables
-  gui.add(camera, 'fov', 0, 180).onChange(function(newVal) {
-    camera.updateProjectionMatrix();
-  });
+  // set up plane mesh for testing
+  var planeGeo = new THREE.PlaneGeometry(gridSize, gridSize, 
+    buildingSpawnDetail * gridSize, buildingSpawnDetail * gridSize);
+  var planeMat = new THREE.MeshBasicMaterial({ 
+      color: 0xffffff,
+      wireframe: true });
+  var planeMesh = new THREE.Mesh(planeGeo, planeMat);
+  
+  // load the three textures for the buildings
+  var texloader = new THREE.TextureLoader();
+  var pink = texloader.load('./src/assets/iridescent.bmp');
+  var green = texloader.load('./src/assets/bluegreen.bmp');
+  var sunset = texloader.load('./src/assets/sunset.bmp');
 
-  // toggle the display for the maps according to the selected configuration
-  var vis = function () {
-    if (config.map == 'water') {
-      waterMap.toggleDisplay(true);
-      pplMap.toggleDisplay(false);
-      comboMap.toggleDisplay(false);
-    } else if (config.map == 'population') {
-      waterMap.toggleDisplay(false);
-      pplMap.toggleDisplay(true);
-      comboMap.toggleDisplay(false);
+  // for each vertex, generate a building only if it is within a proper voronoi region.
+ for (var i = 0; i < planeMesh.geometry.vertices.length; i++) {
+    var v = planeMesh.geometry.vertices[i];
+    if (grid.inSmallerCellPixelTest(v)) {
+      // randomly choose a texture for each building
+      var texture = Math.random() < 0.5 ? sunset : green;
+      var texture = Math.random() < 0.5 ? texture : pink;
+      var building = new Building.Building(scene, v, clock, camera, texture);
+      buildings.push(building);
+    }; 
+  }
+
+  /*
+   * GUI SET UP
+   */
+  function resetGrid() {
+    grid.clearScene();
+
+    grid = new Grid.Grid(scene, gridSize, gridSize, 
+      biocrowdsConfig, voronoi.tilesGrid);
+    
+    grid.plane = voronoiPlane;
+
+    if (biocrowdsConfig.SHOW_VORONOI) scene.add(voronoiPlane);
+    
+    grid.setup();
+  }
+
+  gui.add(camera, 'fov', 0, 180).onChange(resetGrid);
+
+  gui.add(biocrowdsConfig, 'scenario', 
+    { Circle: 'circle', Rows: 'rows'}).onChange(resetGrid);
+
+  gui.add(biocrowdsConfig, 'MORE_ROW_AGENTS', 
+    0, 1).onChange(resetGrid);
+
+  gui.add(biocrowdsConfig, 'NUM_CIRCLE_AGENTS', 
+    0, 300).onChange(resetGrid);
+
+  gui.add(biocrowdsConfig, 'MARKER_DENSITY', 
+    256, 512).onChange(function (val) {
+      grid.clearScene();
+      grid = new Grid.Grid(scene, gridSize, gridSize, 
+        biocrowdsConfig, voronoi.tilesGrid);
+      voronoiPlane = grid.writeVoronoi(biocrowdsConfig.MARKER_DENSITY);
+      grid.plane = voronoiPlane;
+      if (biocrowdsConfig.SHOW_VORONOI) scene.add(voronoiPlane);
+      grid.setup();
+    });
+
+  gui.add(biocrowdsConfig, 'SHOW_VORONOI').onChange(function (val) {
+    if (val) {
+      scene.add(voronoiPlane);
     } else {
-      waterMap.toggleDisplay(false);
-      pplMap.toggleDisplay(false);
-      comboMap.toggleDisplay(true);
+      scene.remove(voronoiPlane);
     }
+  });
+
+  gui.add(biocrowdsConfig, 'RADIUS', 0.0, 10).onChange(resetGrid);
+
+  gui.add(biocrowdsConfig, 'CIRCLE_RADIUS', 0, 10).onChange(resetGrid);
+
+  gui.add(biocrowdsConfig, 'TIMESTEP', 0, 10).onChange(resetGrid);
+
+  window.addEventListener('resize', function() {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+  
+  /*
+   * POST PROCESS SHADER SET UP AND GUI SET UP
+   */  
+  var mesh, shader, post;
+  // this gets called when we set the shader
+  function shaderSet(Shader, gui) {
   }
 
-  // update the colors of each of the planes
-  var recolor = function() {
-    waterMap.generateColors();
-    pplMap.generateColors();
-    comboMap.generateColors();
+  // this gets called when we set the postprocess shader
+  function postProcessSet(Post, gui) {
+      // create the shader and initialize its gui
+      post = new Post(renderer, scene, camera);
+      post.initGUI(gui);
   }
 
-  // recompute voronoi 
-  var updateVoronoi = function() {
-    voronoi.remove();
-    voronoi = new Voronoi.Voronoi(mapBundle, config.numPoints);
-  }
+  setupGUI(shaderSet, postProcessSet);
 
-  // recompute the noise values according to the configurations
-  var recomp = function () {
-    waterMap.rewrite(config.gridSize, config.gridDetail);
-    pplMap.rewrite(config.gridSize, config.gridDetail);
-    comboMap.rewrite(config.gridSize, config.gridDetail);
-    updateVoronoi();
-    vis();
-  }
+  (function tick() {
+    if (clock) clock.getDelta();
+    if (!(grid === undefined)) {
+      grid.tick();
+    }
+  
+    buildings.forEach(function(b) {
+        b.tick();
+    });
 
-  // GUI HANDLE
-  gui.add(config, 'numPoints', 0, 200).onChange(function(newVal) {
-    updateVoronoi();
-  });
+    stats.begin();
 
-  gui.add(config, 'smoothFactor', 0, 40).onChange(function(newVal) {
-    waterMap.smoothFactor = newVal;
-    pplMap.smoothFactor = newVal;
-    comboMap.smoothFactor = newVal;
-    updateVoronoi();
-    recolor();
-  });
+    if (shader && shader.update) shader.update();   // perform any necessary updates
+    if (post && post.update) post.update();         // perform any necessary updates
+    if (post) post.render();                        // render the scene
+    
+    stats.end();
+    requestAnimationFrame(tick);
 
-  gui.add(config, 'gridSize', 0, 100).onChange(function(newVal) {
-    recomp();
-  });
-
-  gui.add(config, 'gridDetail', 0, 10).onChange(function(newVal) {
-    recomp();
-  });
-
-  gui.add(config, 'landThreshold', 0.0, 1.0).onChange(function(newVal) {
-    recomp();
-  });
-
-  gui.add(config, 'map', { water: 'water', 
-    population: 'population', 
-    combination: 'combination'}).onChange(function(value) {
-    vis();
-  });
-
-  // BIOCROWD PARAMS
-  gui.add(biocrowdsConfig, 'markers').onChange(function(newVal) {
-      grid.clearScene();
-      grid = new Grid.Grid(scene, GRIDSIZE, GRIDSIZE, biocrowdsConfig, voronoi.tilesGrid);
-      grid.setup();
-  });
-
-  gui.add(biocrowdsConfig, 'scenario', { Circle: 'circle', Rows: 'rows'}).onChange(function(value) {
-      grid.clearScene();
-      grid = new Grid.Grid(scene, GRIDSIZE, GRIDSIZE, biocrowdsConfig, voronoi.tilesGrid);
-      grid.setup();
-  });
-
-  gui.add(biocrowdsConfig, 'AGENT_SIZE', 0.1, 0.5).onChange(function(newVal) {
-      grid.clearScene();
-      grid = new Grid.Grid(scene, GRIDSIZE, GRIDSIZE, biocrowdsConfig, voronoi.tilesGrid);
-      grid.setup();
-  });
-
-  gui.add(biocrowdsConfig, 'MORE_ROW_AGENTS', 0, 0.4).onChange(function(newVal) {
-      grid.clearScene();
-      grid = new Grid.Grid(scene, GRIDSIZE, GRIDSIZE, biocrowdsConfig, voronoi.tilesGrid);
-      grid.setup();
-  });
-
-  gui.add(biocrowdsConfig, 'NUM_AGENTS', 0, 100).onChange(function(newVal) {
-      grid.clearScene();
-      grid = new Grid.Grid(scene, GRIDSIZE, GRIDSIZE, biocrowdsConfig, voronoi.tilesGrid);
-      grid.setup();
-  });
-
-  gui.add(biocrowdsConfig, 'MARKER_DENSITY', 0, 500).onChange(function(newVal) {
-       grid.clearScene();
-      grid = new Grid.Grid(scene, GRIDSIZE, GRIDSIZE, biocrowdsConfig, voronoi.tilesGrid);
-      grid.setup();
-  });
-
-  gui.add(biocrowdsConfig, 'RADIUS', 0.0, 10).onChange(function(newVal) {
-      grid.clearScene();
-      grid = new Grid.Grid(scene, GRIDSIZE, GRIDSIZE, biocrowdsConfig, voronoi.tilesGrid);
-      grid.setup();
-  });
-
-  gui.add(biocrowdsConfig, 'CIRCLE_RADIUS', 0, 10).onChange(function(newVal) {
-      grid.clearScene();
-      grid = new Grid.Grid(scene, GRIDSIZE, GRIDSIZE, biocrowdsConfig, voronoi.tilesGrid);
-      grid.setup();
-  });
-}
-
-// called on frame updates
-function onUpdate(framework) {
-  if (!(grid === undefined)) {
-    grid.tick();
-  }
-}
-
-// when the scene is done initializing, it will call onLoad, then on frame updates, call onUpdate
-Framework.init(onLoad, onUpdate);
+  })();
+});
