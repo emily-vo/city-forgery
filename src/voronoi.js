@@ -186,7 +186,8 @@ class Tile {
 		// get mesh edges
 		
 		// add the Tile to the scene
-		//scene.add (mesh);
+		mesh.position.z -= 0.01;
+		scene.add (mesh);
 
 		this.mesh = mesh;
 		// store center

@@ -51,7 +51,7 @@ class Building {
 		var source = [];
 		var floorScale = Math.random() + 0.2;
 		var size = new THREE.Vector3(floorScale, floorScale, Math.random() + 0.5);
-		size.multiplyScalar(0.15);
+		size.multiplyScalar(0.3);
 		// keep current floor plan (list of overlapping shapes)
 		var numFloors = 4 * Math.random() + 2;
 		var z = 0;
@@ -89,6 +89,10 @@ class Building {
 	            u_useTexture: {
 	                type: 'i',
 	                value: true
+	            },
+	            u_flashing: {
+	            	type: 'i',
+	            	value: 1
 	            },
 	            u_albedo: {
 	                type: 'v3',

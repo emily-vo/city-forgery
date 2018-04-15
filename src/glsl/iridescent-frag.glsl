@@ -15,6 +15,7 @@ varying float noise;
 uniform float type;
 uniform float speed;
 uniform float direction;
+uniform int u_flashing;
 
 float random(float a, float b, float c) {
     return fract(sin(dot(vec3(a, b, c), vec3(12.9898, 78.233, 578.233)))*43758.5453);
@@ -108,18 +109,23 @@ float generateNoise(float x, float y, float z) {
     }
     return total;
 }
+
 void main() {
     vec4 color = vec4(0.0, 0.0, 1.0, 1.0);
     float n =  generateNoise(f_uv[0], f_uv[1], abs(sin(time * speed)));
     float t = abs(sin(time * speed));
-   //float n = generateNoise(f_position[0] + t, f_position[1] + t, f_position[2] + t);
-   // float d = clamp(dot(-f_normal, normalize(u_camPos - f_position)), 0.0, 1.0);
+    if (u_flashing == 1) {
+        //n = 0.0;
+        //n = generateNoise(f_position[0] + time * speed, f_position[1] + time * speed, f_position[2] + time * speed);
+    }
+
     float d = clamp(dot(f_normal, normalize(u_camPos - f_position)), 0.0, 1.0);
+    
     //Read from texture using relation to the view vector and a little bit of noise
     if (u_useTexture == 1) {
-        //color = texture2D(texture, f_uv);
         color = texture2D(texture, vec2(f_uv[0], n * n));
     }
+
     // d * color.rgb * u_lightCol * u_lightIntensity + u_ambient, 1
     //gl_FragColor = vec4(d, d, d, 1);
    

@@ -32,20 +32,21 @@ var grid;
 var buildings = [];
 
 // GUI control parameters 
-var crowdsConfig = function() {
-   this.scenario = "circle";
-   this.MORE_ROW_AGENTS = 0.7;
+var appConfig = function() {
+   this.SCENARIO = "circle";
+   this.NUM_ROW_AGENTS = 1;
    this.NUM_CIRCLE_AGENTS = 20;
    this.MARKER_DENSITY = 256;
    this.RADIUS = 0.2;
    this.CIRCLE_RADIUS = gridSize / 2;
    this.TIMESTEP = .1;
-   this.SHOW_VORONOI = true;
+   this.SHOW_VORONOI = false;
+   this.PLAYING = true;
+   this.FLASHING = false;
 }
 
-var biocrowdsConfig = new crowdsConfig();
+var config = new appConfig();
 var buildings = [];
-
 
 // called after the scene loads
 window.addEventListener('load', function() {
@@ -114,10 +115,11 @@ window.addEventListener('load', function() {
    * BIOCROWDS SET UP
    */
   // write the voronoi data to the plane, which is then passed to the biocrowds grid
-  grid = new Grid.Grid(scene, gridSize, gridSize, biocrowdsConfig, voronoi.tilesGrid);
-  var voronoiPlane = grid.writeVoronoi(biocrowdsConfig.MARKER_DENSITY);
+  grid = new Grid.Grid(scene, gridSize, gridSize, config, voronoi.tilesGrid);
+  var voronoiPlane = grid.writeVoronoi(config.MARKER_DENSITY);
+  voronoiPlane.position.z = 0;
   grid.plane = voronoiPlane;
-  if (biocrowdsConfig.SHOW_VORONOI) scene.add(voronoiPlane);
+  if (config.SHOW_VORONOI) scene.add(voronoiPlane);
   grid.setup();
   
   /*
@@ -130,10 +132,11 @@ window.addEventListener('load', function() {
   var planeGeo = new THREE.PlaneGeometry(gridSize, gridSize, 
     buildingSpawnDetail * gridSize, buildingSpawnDetail * gridSize);
   var planeMat = new THREE.MeshBasicMaterial({ 
-      color: 0xffffff,
-      wireframe: true });
+      color: 0x000000,
+      wireframe: false });
   var planeMesh = new THREE.Mesh(planeGeo, planeMat);
-  
+  scene.add(planeMesh);
+
   // load the three textures for the buildings
   var texloader = new THREE.TextureLoader();
   var pink = texloader.load('./src/assets/iridescent.bmp');
@@ -151,7 +154,8 @@ window.addEventListener('load', function() {
       buildings.push(building);
     }; 
   }
-
+  planeMesh.position.set(0, 0, -0.02);
+  planeMesh.scale.set(50, 50, 0);
   /*
    * GUI SET UP
    */
@@ -159,38 +163,38 @@ window.addEventListener('load', function() {
     grid.clearScene();
 
     grid = new Grid.Grid(scene, gridSize, gridSize, 
-      biocrowdsConfig, voronoi.tilesGrid);
+      config, voronoi.tilesGrid);
     
     grid.plane = voronoiPlane;
 
-    if (biocrowdsConfig.SHOW_VORONOI) scene.add(voronoiPlane);
+    if (config.SHOW_VORONOI) scene.add(voronoiPlane);
     
     grid.setup();
   }
 
   gui.add(camera, 'fov', 0, 180).onChange(resetGrid);
 
-  gui.add(biocrowdsConfig, 'scenario', 
+  gui.add(config, 'SCENARIO', 
     { Circle: 'circle', Rows: 'rows'}).onChange(resetGrid);
 
-  gui.add(biocrowdsConfig, 'MORE_ROW_AGENTS', 
-    0, 1).onChange(resetGrid);
+  gui.add(config, 'NUM_ROW_AGENTS', 
+    1, 100).onChange(resetGrid);
 
-  gui.add(biocrowdsConfig, 'NUM_CIRCLE_AGENTS', 
+  gui.add(config, 'NUM_CIRCLE_AGENTS', 
     0, 300).onChange(resetGrid);
 
-  gui.add(biocrowdsConfig, 'MARKER_DENSITY', 
+  gui.add(config, 'MARKER_DENSITY', 
     256, 512).onChange(function (val) {
       grid.clearScene();
-      grid = new Grid.Grid(scene, gridSize, gridSize, 
-        biocrowdsConfig, voronoi.tilesGrid);
-      voronoiPlane = grid.writeVoronoi(biocrowdsConfig.MARKER_DENSITY);
+      grid = new Grid.Grid(scene, gridSize, gridSize, config, voronoi.tilesGrid);
+      voronoiPlane = grid.writeVoronoi(config.MARKER_DENSITY);
+      voronoiPlane.position.z = 0;
       grid.plane = voronoiPlane;
-      if (biocrowdsConfig.SHOW_VORONOI) scene.add(voronoiPlane);
+      if (config.SHOW_VORONOI) scene.add(voronoiPlane);
       grid.setup();
     });
 
-  gui.add(biocrowdsConfig, 'SHOW_VORONOI').onChange(function (val) {
+  gui.add(config, 'SHOW_VORONOI').onChange(function (val) {
     if (val) {
       scene.add(voronoiPlane);
     } else {
@@ -198,11 +202,15 @@ window.addEventListener('load', function() {
     }
   });
 
-  gui.add(biocrowdsConfig, 'RADIUS', 0.0, 10).onChange(resetGrid);
+  gui.add(config, 'RADIUS', 0.0, 10).onChange(resetGrid);
 
-  gui.add(biocrowdsConfig, 'CIRCLE_RADIUS', 0, 10).onChange(resetGrid);
+  gui.add(config, 'CIRCLE_RADIUS', 0, 10).onChange(resetGrid);
 
-  gui.add(biocrowdsConfig, 'TIMESTEP', 0, 10).onChange(resetGrid);
+  gui.add(config, 'TIMESTEP', 0, 10).onChange(resetGrid);
+
+  gui.add(config, 'PLAYING').onChange(function (val) {
+
+  });
 
   window.addEventListener('resize', function() {
       camera.aspect = window.innerWidth / window.innerHeight;
@@ -229,7 +237,7 @@ window.addEventListener('load', function() {
 
   (function tick() {
     if (clock) clock.getDelta();
-    if (!(grid === undefined)) {
+    if (!(grid === undefined) && config.PLAYING) {
       grid.tick();
     }
   
