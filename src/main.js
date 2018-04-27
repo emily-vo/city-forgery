@@ -39,7 +39,7 @@ var appConfig = function() {
    this.MARKER_DENSITY = 256;
    this.RADIUS = 0.2;
    this.CIRCLE_RADIUS = gridSize / 2;
-   this.TIMESTEP = .1;
+   this.TIMESTEP = .4;
    this.SHOW_VORONOI = false;
    this.PLAYING = true;
    this.FLASHING = false;
@@ -156,6 +156,7 @@ window.addEventListener('load', function() {
   }
   planeMesh.position.set(0, 0, -0.02);
   planeMesh.scale.set(50, 50, 0);
+  
   /*
    * GUI SET UP
    */
