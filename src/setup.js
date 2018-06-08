@@ -42,7 +42,7 @@ export function setupGUI(shaderSet, postProcessSet) {
         postProcessSet(Post[name], postFolder);
     }
 
-    setPostProcess(Object.keys(Post)[0]);
+    setPostProcess(Object.keys(Post)[3]);
 
     return {
         setPostProcess
